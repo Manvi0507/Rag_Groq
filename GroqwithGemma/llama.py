@@ -35,6 +35,16 @@ Questions: {input}
 """
 )
 
+def clone_repo(repo_url, repo_dir):
+    if not os.path.exists(repo_dir):
+        subprocess.run(["git", "clone", repo_url, repo_dir])
+    else:
+        subprocess.run(["git", "-C", repo_dir, "pull"])
+
+repo_url = ""
+repo_dir = "./med_data"
+clone_repo(repo_url, repo_dir)
+
 # Function to handle vector embedding
 def vector_embedding():
     if "vectors" not in st.session_state:
