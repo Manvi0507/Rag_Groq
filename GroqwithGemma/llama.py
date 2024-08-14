@@ -41,7 +41,7 @@ def clone_repo(repo_url, repo_dir):
     else:
         subprocess.run(["git", "-C", repo_dir, "pull"])
 
-repo_url = ""
+repo_url = "https://github.com/Manvi0507/Rag_Groq/tree/main"
 repo_dir = "./med_data"
 clone_repo(repo_url, repo_dir)
 
