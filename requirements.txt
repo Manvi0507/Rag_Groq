@@ -8,4 +8,6 @@ streamlit
 langchain_community
 python-dotenv
 pypdf
+requests
+urllib
 google-cloud-aiplatform
