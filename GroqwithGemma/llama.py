@@ -1,96 +1,147 @@
 import streamlit as st
+from PyPDF2 import PdfReader
 import os
-import subprocess  # Import the subprocess module
-from langchain_groq import ChatGroq
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain_core.prompts import ChatPromptTemplate
-from langchain.chains import create_retrieval_chain
-from langchain_community.vectorstores import FAISS
-from langchain_community.document_loaders import PyPDFDirectoryLoader
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_groq import ChatGroq
+from langchain.vectorstores import FAISS
+from langchain.chains import RetrievalQA
+from langchain.memory import ConversationBufferMemory
+from langchain.prompts import PromptTemplate
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from dotenv import load_dotenv
+import pdfplumber
 
 # Load environment variables
 load_dotenv()
-
-# Load the GROQ and Google API keys
 groq_api_key = os.getenv('GROQ_API_KEY')
 os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY")
 
-st.title("Medical Document Q&A")
+# Function to extract text from multiple PDFs
+def get_pdf_text(pdf_docs):
+    text = ""
+    for pdf in pdf_docs:
+        pdf_reader = PdfReader(pdf)
+        for page in pdf_reader.pages:
+            text += page.extract_text()
+    return text
 
-# Initialize the LLM
-llm = ChatGroq(groq_api_key=groq_api_key,
-               model_name="Llama3-8b-8192")
+# Function to handle text chunks for Vector Store
+def get_text_chunks(text):
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=10000, chunk_overlap=1000)
+    chunks = text_splitter.split_text(text)
+    return chunks
 
-# Define the prompt template
-prompt = ChatPromptTemplate.from_template(
-"""
-Answer the questions based on the provided context only.
-Please provide the most accurate response based on the question.
-<context>
-{context}
-<context>
-Questions: {input}
-"""
-)
-import requests
+# Function to get Vector Store using FAISS with Google embeddings
+def get_vector_store(text_chunks):
+    # Use Google's Generative AI Embeddings for embedding the chunks
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
+    return vector_store
 
-url = 'https://github.com/Manvi0507/Rag_Groq/tree/7f8221a6eea692eda77dc38deef9b84a300b1cb6/GroqwithGemma.git'
-response = requests.get(url)
-data = response.text
+# Function to initialize conversational chain with Groq Llama model
+def get_conversational_chain(vector_store):
+    prompt = """
+    You are an AI assistant designed to summarize and extract information from documents. Follow these instructions carefully:
 
-# Clone the GitHub repository (run only once)
-repo_url = "https://github.com/Manvi0507/Rag_Groq/tree/7f8221a6eea692eda77dc38deef9b84a300b1cb6/GroqwithGemma.git"
-repo_dir = "./med_data"
+    - Summarize the provided document in no more than 200 words.
+    - Ensure the summary is concise and captures the main points.
+    - Use clear headings and bullet points to organize the information when needed.
+    - If a table format is suitable for presenting the information, format the response accordingly.
+    - Base your response strictly on the content of the provided document.
+    - Incorporate the conversation history to provide contextually relevant and coherent answers.
 
-if not os.path.exists(repo_dir):
-    subprocess.run(["git", "clone", repo_url, repo_dir])
+    Use the following context (delimited by <ctx></ctx>) and the chat history (delimited by <hs></hs>) to answer the question:
+    ------
+    <ctx>
+    {context}
+    </ctx>
+    ------
+    <hs>
+    {history}
+    </hs>
+    ------
+    {question}
 
-# Set document directory path
-document_directory = os.path.join(repo_dir, "docs")
-# Function to handle vector embedding
-def vector_embedding():
-    if "vectors" not in st.session_state:
-        st.session_state.embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-        st.session_state.loader = PyPDFDirectoryLoader(document_directory)  # Data Ingestion
-        st.session_state.docs = st.session_state.loader.load()  # Document Loading
-        st.session_state.text_splitter = RecursiveCharacterTextSplitter(chunk_size=10000, chunk_overlap=1000)  # Chunk Creation
-        st.session_state.final_documents = st.session_state.text_splitter.split_documents(st.session_state.docs)  # Splitting
-        st.session_state.vectors = FAISS.from_documents(st.session_state.final_documents, st.session_state.embeddings)  # Vector embeddings
+    Answer:
+    """
 
-# Input for the user's question
-prompt1 = st.text_input("Enter Your Question From Documents")
+    # Groq model for conversational tasks
+    model = ChatGroq(api_key=groq_api_key, model_name="Llama3-8b-8192")  
 
-# Buttons for clearing response and embedding documents
-col1, col2 = st.columns(2)
+    prompt_template = PromptTemplate(
+        template=prompt,
+        input_variables=["context", "question", "history"]
+    )
 
-with col2:
+    memory = st.session_state.get("memory", ConversationBufferMemory(
+        memory_key="history",
+        input_key="question"
+    ))
+
+    if vector_store is None:
+        st.error("Vector Store is not initialized. Please upload and process your documents first.")
+        return None
+
+    retrieval_chain = RetrievalQA.from_chain_type(
+        llm=model,
+        chain_type='stuff',
+        retriever=vector_store.as_retriever(),
+        chain_type_kwargs={"prompt": prompt_template, "memory": memory}
+    )
+
+    st.session_state.memory = memory
+
+    return retrieval_chain
+
+# Function to handle user input and response
+def handle_user_input(user_question):
+    vector_store = st.session_state.get("vector_store", None)
+    if not vector_store:
+        st.error("Please upload and process PDF files first.")
+        return
+
+    chain = get_conversational_chain(vector_store)
+    if chain is None:
+        return
+
+    response = chain({"query": user_question}, return_only_outputs=True)
+    st.session_state.response = response.get("result", "No valid response received.")
+    st.write("Reply: ", st.session_state.response)
+
+# Main function to run Streamlit app
+def main():
+    st.set_page_config(page_title="Chat with Documents using Groq & Google")
+    st.header("QA with Your Multiple Documents 💁")
+
+    if "vector_store" not in st.session_state:
+        st.session_state.vector_store = None
+
+    if "response" not in st.session_state:
+        st.session_state.response = ""
+
+    user_question = st.text_input("Ask a Question from the PDF Files", value=st.session_state.response)
+
+    if st.button("Ask Question"):
+        handle_user_input(user_question)
+
     if st.button("Clear Response"):
         st.session_state.response = ""
         st.write("Response cleared.")
 
-with col1:
-    if st.button("Documents Embedding"):
-        vector_embedding()
-        st.write("Vector Store DB Is Ready")
+    with st.sidebar:
+        st.title("Menu:")
+        pdf_docs = st.file_uploader("Upload your PDF Files", accept_multiple_files=True, type=["pdf"])
+        if pdf_docs and st.button("Submit & Process"):
+            with st.spinner("Processing..."):
+                # Process all uploaded PDFs
+                raw_text = get_pdf_text(pdf_docs)
+                
+                # Split the text into chunks
+                text_chunks = get_text_chunks(raw_text)
+                
+                # Create a vector store from the text chunks
+                st.session_state.vector_store = get_vector_store(text_chunks)
+                st.success("Documents processed successfully!")
 
-import time
-
-# Ask Question Button
-if st.button("Ask Question"):
-    if prompt1:
-        document_chain = create_stuff_documents_chain(llm, prompt)
-        retriever = st.session_state.vectors.as_retriever()
-        retrieval_chain = create_retrieval_chain(retriever, document_chain)
-        start = time.process_time()
-        response = retrieval_chain.invoke({'input': prompt1})
-        st.write("Response time: ", time.process_time() - start)
-        st.write(response['answer'])
-
-        # Display relevant document chunks in an expander
-        with st.expander("Document Similarity Search"):
-            for i, doc in enumerate(response["context"]):
-                st.write(doc.page_content)
-                st.write("--------------------------------")
+if __name__ == "__main__":
+    main()
