@@ -37,11 +37,21 @@ Questions: {input}
 """
 )
 
+# Clone the GitHub repository (run only once)
+repo_url = "https://github.com/Manvi0507/Rag_Groq/tree/7f8221a6eea692eda77dc38deef9b84a300b1cb6/GroqwithGemma.git"
+repo_dir = "./med_data"
+
+if not os.path.exists(repo_dir):
+    subprocess.run(["git", "clone", repo_url, repo_dir])
+
+# Set document directory path
+document_directory = os.path.join(repo_dir, "docs")
+
 # Function to handle vector embedding
 def vector_embedding():
     if "vectors" not in st.session_state:
         st.session_state.embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-        st.session_state.loader = PyPDFDirectoryLoader("./med_data")  # Data Ingestion
+        st.session_state.loader = PyPDFDirectoryLoader(document_directory)  # Data Ingestion
         st.session_state.docs = st.session_state.loader.load()  # Document Loading
         
         # Ensure documents are loaded
