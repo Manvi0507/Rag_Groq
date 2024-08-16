@@ -56,7 +56,7 @@ def vector_embedding():
         st.session_state.embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
         st.session_state.loader = PyPDFDirectoryLoader(document_directory)  # Data Ingestion
         st.session_state.docs = st.session_state.loader.load()  # Document Loading
-        st.session_state.text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)  # Chunk Creation
+        st.session_state.text_splitter = RecursiveCharacterTextSplitter(chunk_size=10000, chunk_overlap=1000)  # Chunk Creation
         st.session_state.final_documents = st.session_state.text_splitter.split_documents(st.session_state.docs)  # Splitting
         st.session_state.vectors = FAISS.from_documents(st.session_state.final_documents, st.session_state.embeddings)  # Vector embeddings
 
