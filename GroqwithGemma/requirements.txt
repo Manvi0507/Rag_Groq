@@ -8,6 +8,6 @@ streamlit
 langchain_community
 python-dotenv
 pypdf
+pymupdf
 google-cloud-aiplatform
-requests
-
+pdfplumber
