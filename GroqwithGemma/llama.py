@@ -35,6 +35,11 @@ Please provide the most accurate response based on the question.
 Questions: {input}
 """
 )
+import requests
+
+url = 'https://github.com/Manvi0507/Rag_Groq/tree/7f8221a6eea692eda77dc38deef9b84a300b1cb6/GroqwithGemma.git'
+response = requests.get(url)
+data = response.text
 
 # Clone the GitHub repository (run only once)
 repo_url = "https://github.com/Manvi0507/Rag_Groq/tree/7f8221a6eea692eda77dc38deef9b84a300b1cb6/GroqwithGemma.git"
