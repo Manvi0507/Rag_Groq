@@ -5,6 +5,7 @@ langchain-groq
 google-generativeai
 langchain-community
 langchain_google_genai
+pypdf
 PyMuPDF
 pdfminer.six
 PyPDF2
